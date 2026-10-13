@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>CRH 高速动车组 · 模拟驾驶</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{
+    width:100%;height:100%;overflow:hidden;background:#000;
+    font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    user-select:none;-webkit-user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    overscroll-behavior:none;
+    touch-action:none;
+  }
+  #cv{display:block;width:100%;height:100%;touch-action:none;}
+  #ui{position:fixed;inset:0;pointer-events:none;}
+
+  .panel{
+    position:absolute;
+    background:rgba(8,14,24,.74);
+    border:1px solid rgba(120,180,255,.22);
+    border-radius:14px;
+    padding:12px 16px;
+    color:#cfe4ff;
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+    box-shadow:0 6px 24px rgba(0,0,0,.45);
+  }
+
+  /* ---------- 速度表 ---------- */
+  #speedPanel{right:16px;top:16px;text-align:right;min-width:190px;}
+  #speedVal{font-size:clamp(44px,9vw,68px);font-weight:700;line-height:.95;
+    font-variant-numeric:tabular-nums;letter-spacing:-2px;
+    color:#eaf6ff;text-shadow:0 0 24px rgba(80,180,255,.55);
+    transition:color .2s,text-shadow .2s;}
+  #speedVal.free{color:#ffcf5c;text-shadow:0 0 28px rgba(255,180,40,.75);}
+  #speedUnit{font-size:12px;letter-spacing:4px;color:#7fa8cc;margin-top:2px;}
+  #limitRow{margin-top:6px;font-size:12px;color:#8fb6d8;}
+  #limitRow b{color:#7ee2a8;font-size:14px;}
+  #limitRow b.off{color:#ff8a5c;}
+
+  /* ---------- 左侧信息 + ATP ---------- */
+  #leftPanel{left:16px;top:16px;min-width:230px;}
+  .row{display:flex;justify-content:space-between;align-items:center;
+    font-size:13px;margin-bottom:7px;gap:10px;}
+  .row:last-child{margin-bottom:0;}
+  .k{color:#7fa8cc;}
+  .v{font-weight:600;font-variant-numeric:tabular-nums;}
+  #notchVal.pull{color:#7ee2a8;}
+  #notchVal.coast{color:#9fb6cc;}
+  #notchVal.brake{color:#ff7a6b;}
+
+  #notchBar{position:relative;height:9px;border-radius:5px;
+    background:linear-gradient(90deg,rgba(255,90,70,.35) 0%,rgba(255,90,70,.35) 44.4%,
+    rgba(150,170,190,.35) 44.4%,rgba(150,170,190,.35) 55.6%,
+    rgba(80,220,150,.3) 55.6%,rgba(80,220,150,.3) 100%);
+    margin:8px 0 10px;}
+  #notchMark{position:absolute;top:-4px;width:4px;height:17px;border-radius:2px;
+    background:#fff;box-shadow:0 0 10px rgba(255,255,255,.9);
+    transform:translateX(-2px);transition:background .15s;}
+
+  #atpRow{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  #atpState{font-size:13px;font-weight:700;color:#7ee2a8;}
+  #atpState.off{color:#ff7a6b;}
+  #atpBtn{
+    pointer-events:auto;cursor:pointer;
+    background:rgba(255,90,70,.16);
+    border:1px solid rgba(255,110,80,.55);
+    color:#ffb0a0;
+    padding:9px 16px;border-radius:10px;
+    font-size:13px;font-weight:700;font-family:inherit;
+    transition:all .15s;
+    touch-action:manipulation;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #atpBtn.on{background:rgba(80,220,150,.16);border-color:rgba(80,220,150,.55);color:#9df3c4;}
+
+  /* ---------- 顶部提示 ---------- */
+  #hint{position:absolute;top:18px;left:50%;transform:translateX(-50%);
+    font-size:12px;color:rgba(200,225,255,.6);letter-spacing:.5px;
+    text-align:center;line-height:1.6;max-width:46vw;}
+  #hint kbd{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);
+    border-radius:4px;padding:1px 6px;font-family:inherit;font-size:11px;color:#cfe4ff;}
+
+  /* ---------- 底部触控按钮 ---------- */
+  #touch{
+    position:fixed;left:0;right:0;bottom:0;
+    display:flex;gap:12px;
+    padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px));
+    pointer-events:none;z-index:20;
+  }
+  .tbtn{
+    pointer-events:auto;
+    flex:1;min-height:80px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:2px;
+    border-radius:18px;
+    border:1px solid rgba(140,190,255,.32);
+    background:rgba(18,28,46,.8);
+    color:#cfe4ff;
+    font-size:17px;font-weight:700;font-family:inherit;
+    letter-spacing:3px;
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+    box-shadow:0 6px 20px rgba(0,0,0,.45);
+    touch-action:none;
+    -webkit-tap-highlight-color:transparent;
+    user-select:none;-webkit-user-select:none;
+    transition:transform .07s,background .07s,border-color .07s;
+  }
+  .tbtn small{font-size:10px;letter-spacing:1px;color:#7fa8cc;font-weight:500;}
+  .tbtn.act{transform:scale(.965);}
+  #btnPull.act{background:rgba(50,170,105,.5);border-color:rgba(100,235,160,.8);color:#e6fff1;}
+  #btnBrake.act{background:rgba(195,65,50,.5);border-color:rgba(255,125,105,.8);color:#fff0ec;}
+  #btnCoast.act{background:rgba(90,120,160,.5);border-color:rgba(170,200,240,.7);}
+
+  /* ---------- 超速报警 ---------- */
+  #warn{position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);
+    font-size:clamp(26px,7vw,46px);font-weight:800;color:#ff5b4a;letter-spacing:8px;
+    text-shadow:0 0 30px rgba(255,60,40,.9);opacity:0;pointer-events:none;white-space:nowrap;}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<div id="ui">
+  <div id="hint">按住下方按钮牵引 / 制动 · 点击 ATP 按钮解除防护</div>
+
+  <div id="warn">超 速 报 警</div>
+
+  <div class="panel" id="leftPanel">
+    <div class="row">
+      <span class="k">司控器</span>
+      <span class="v" id="notchVal">惰行</span>
+    </div>
+    <div id="notchBar"><div id="notchMark" style="left:44.4%"></div></div>
+    <div class="row" id="atpRow">
+      <span id="atpState">ATP 防护：启用</span>
+      <button id="atpBtn">解除 ATP</button>
+    </div>
+  </div>
+
+  <div class="panel" id="speedPanel">
+    <div id="speedVal">0</div>
+    <div id="speedUnit">km/h</div>
+    <div id="limitRow">限速 <b id="limitVal">300</b> km/h</div>
+  </div>
+</div>
+
+<div id="touch">
+  <button class="tbtn" id="btnBrake">制 动<small>按住</small></button>
+  <button class="tbtn" id="btnCoast">惰 行<small>点击</small></button>
+  <button class="tbtn" id="btnPull">牵 引<small>按住</small></button>
+</div>
+
+<script>
+/* =======================================================
+   常量  —— 火箭级动力
+   ======================================================= */
+const MASS         = 500000;   // kg  8节编组约500t
+const MAX_TRACTION = 1.0e6;    // N   低速最大牵引力
+const POWER        = 50e6;     // W   牵引功率 50MW
+const BRAKE_DECEL  = 1.60;     // m/s² 最大常用制动
+const EMERG_DECEL  = 2.00;     // m/s² ATP紧急制动
+const A_RES = 2600, B_RES = 45, C_RES = 8.2;   // 阻力系数
+const ATP_LIMIT_KMH = 300;
+
+const NOTCH_MAX  =  100;   // 牵引上限 100
+const NOTCH_MIN  =  -80;   // 制动下限 -80
+const NOTCH_RATE =   90;   // 档/秒
+
+const isTouch = ('ontouchstart' in window) ||
+                (navigator.maxTouchPoints > 0) ||
+                window.matchMedia('(pointer: coarse)').matches;
+
+/* =======================================================
+   画布
+   ======================================================= */
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W, H, horizonY;
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  cv.width  = Math.round(W * dpr);
+  cv.height = Math.round(H * dpr);
+  cv.style.width  = W + 'px';
+  cv.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  horizonY = H * 0.42;
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+resize();
+
+/* 透视投影 */
+const K  = 12;
+const pf = d => K / (d + K);                        // 0~1
+const py = d => horizonY + (H - horizonY) * pf(d);  // 距离 → 屏幕y
+
+/* =======================================================
+   随机弯道：按里程生成横向偏移
+   ======================================================= */
+const SEG       = 180;    // 每段长度 m
+const CURVE_AMP = 42;     // 最大横向摆幅 m
+
+function hash1(n){
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function curveOffset(s){
+  const i  = Math.floor(s / SEG);
+  const t  = s / SEG - i;
+  const t2 = t * t * (3 - 2 * t);          // smoothstep 平滑
+  const a  = (hash1(i)     - 0.5) * 2 * CURVE_AMP;
+  const b  = (hash1(i + 1) - 0.5) * 2 * CURVE_AMP;
+  return a + (b - a) * t2;
+}
+
+let camCurve = 0;   // 列车当前所在处的轨道偏移
+
+function pxc(d, xm){
+  return W/2 + (curveOffset(S.pos + d) - camCurve + xm) * W * 0.30 * pf(d);
+}
+
+/* =======================================================
+   状态
+   ======================================================= */
+const S = {
+  v: 0,          // m/s
+  pos: 0,        // m
+  notch: 0,      // -80 ~ +100
+  atpOn: true,
+  atpBrake: false,
+  warn: false,
+  time: 0
+};
+
+/* 输入 */
+const kb = { pull:false, brake:false };
+const tc = { pull:false, brake:false };
+
+/* =======================================================
+   键盘
+   ======================================================= */
+window.addEventListener('keydown', e => {
+  if(['ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
+  switch(e.code){
+    case 'KeyW': case 'ArrowUp':   kb.pull  = true; break;
+    case 'KeyS': case 'ArrowDown': kb.brake = true; break;
+    case 'Space': if(!e.repeat) S.notch = 0; break;
+    case 'KeyD':  if(!e.repeat) toggleATP(); break;
+  }
+}, {passive:false});
+
+window.addEventListener('keyup', e => {
+  switch(e.code){
+    case 'KeyW': case 'ArrowUp':   kb.pull  = false; break;
+    case 'KeyS': case 'ArrowDown': kb.brake = false; break;
+  }
+});
+
+/* =======================================================
+   ATP 开关
+   ======================================================= */
+function toggleATP(){
+  S.atpOn = !S.atpOn;
+  if(!S.atpOn) S.atpBrake = false;
+
+  const btn = document.getElementById('atpBtn');
+  const st  = document.getElementById('atpState');
+  if(S.atpOn){
+    btn.textContent = '解除 ATP';
+    btn.classList.remove('on');
+    st.textContent = 'ATP 防护：启用';
+    st.classList.remove('off');
+  }else{
+    btn.textContent = '恢复 ATP';
+    btn.classList.add('on');
+    st.textContent = 'ATP 防护：已解除';
+    st.classList.add('off');
+  }
+  document.getElementById('speedVal').classList.toggle('free', !S.atpOn);
+  const lim = document.getElementById('limitVal');
+  lim.classList.toggle('off', !S.atpOn);
+  lim.textContent = S.atpOn ? '300' : '∞';
+}
+
+const atpBtnEl = document.getElementById('atpBtn');
+atpBtnEl.addEventListener('click', e => {
+  e.preventDefault();
+  toggleATP();
+  atpBtnEl.blur();
+});
+
+/* =======================================================
+   触屏按钮
+   ======================================================= */
+function bindHold(el, onDown, onUp){
+  let active = false;
+
+  const down = e => {
+    e.preventDefault();
+    active = true;
+    el.classList.add('act');
+    try{ el.setPointerCapture(e.pointerId); }catch(_){}
+    onDown();
+  };
+  const up = () => {
+    if(!active) return;
+    active = false;
+    el.classList.remove('act');
+    onUp();
+  };
+
+  el.addEventListener('pointerdown', down, {passive:false});
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('lostpointercapture', up);
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+const btnPull  = document.getElementById('btnPull');
+const btnBrake = document.getElementById('btnBrake');
+const btnCoast = document.getElementById('btnCoast');
+
+bindHold(btnPull,  () => tc.pull  = true, () => tc.pull  = false);
+bindHold(btnBrake, () => tc.brake = true, () => tc.brake = false);
+
+btnCoast.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  btnCoast.classList.add('act');
+  S.notch = 0;
+});
+['pointerup','pointercancel','pointerleave'].forEach(ev =>
+  btnCoast.addEventListener(ev, () => btnCoast.classList.remove('act'))
+);
+btnCoast.addEventListener('contextmenu', e => e.preventDefault());
+
+/* 防止双指缩放 / 双击缩放 */
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault(), {passive:false});
+
+/* =======================================================
+   物理更新
+   ======================================================= */
+function update(dt){
+  S.time += dt;
+
+  /* ---- 司控器 ---- */
+  const pull  = kb.pull  || tc.pull;
+  const brake = kb.brake || tc.brake;
+
+  if(pull)  S.notch = Math.min(NOTCH_MAX, S.notch + NOTCH_RATE * dt);
+  if(brake) S.notch = Math.max(NOTCH_MIN, S.notch - NOTCH_RATE * dt);
+
+  const v = S.v;
+
+  /* ---- 牵引 / 制动力 ---- */
+  let F = 0;
+  if(S.notch > 0.5){
+    const fmax = Math.min(MAX_TRACTION, POWER / Math.max(v, 5));  // 恒功率区
+    F = fmax * (S.notch / NOTCH_MAX);
+  }else if(S.notch < -0.5){
+    F = -MASS * BRAKE_DECEL * (Math.min(-S.notch, -NOTCH_MIN) / -NOTCH_MIN);
+  }
+
+  /* ATP 紧急制动优先 */
+  if(S.atpBrake) F = Math.min(F, -MASS * EMERG_DECEL);
+
+  /* ---- 阻力 ---- */
+  const drag = A_RES + B_RES * v + C_RES * v * v;
+  const a = (F - (v > 0.05 ? drag : 0)) / MASS;
+
+  S.v = Math.max(0, v + a * dt);
+  S.pos += S.v * dt;
+
+  /* ---- ATP 逻辑 ---- */
+  if(S.atpOn){
+    const limit = ATP_LIMIT_KMH / 3.6;
+    if(!S.atpBrake){
+      if(S.v > limit + 0.9) S.atpBrake = true;
+    }else{
+      if(S.v < limit - 0.9) S.atpBrake = false;
+    }
+    S.warn = S.v > limit;
+  }else{
+    S.atpBrake = false;
+    S.warn = false;
+  }
+}
+
+/* =======================================================
+   渲染
+   ======================================================= */
+function render(){
+  /* 相机所在处的弯道偏移 */
+  camCurve = curveOffset(S.pos);
+
+  /* ---------- 天空 ---------- */
+  const sg = ctx.createLinearGradient(0, 0, 0, horizonY);
+  sg.addColorStop(0,    '#3a6ba6');
+  sg.addColorStop(0.55, '#7fb0d8');
+  sg.addColorStop(1,    '#c8dff0');
+  ctx.fillStyle = sg;
+  ctx.fillRect(0, 0, W, horizonY + 1);
+
+  /* 远山 */
+  ctx.fillStyle = 'rgba(88,112,138,0.55)';
+  ctx.beginPath();
+  ctx.moveTo(0, horizonY);
+  for(let x = 0; x <= W; x += 24){
+    const h = Math.sin(x * 0.0075) * 22 + Math.sin(x * 0.019 + 1.3) * 11 + 18;
+    ctx.lineTo(x, horizonY - h);
+  }
+  ctx.lineTo(W, horizonY);
+  ctx.closePath();
+  ctx.fill();
+
+  /* ---------- 地面 ---------- */
+  const gg = ctx.createLinearGradient(0, horizonY, 0, H);
+  gg.addColorStop(0,    '#6f7d55');
+  gg.addColorStop(0.35, '#4b5738');
+  gg.addColorStop(1,    '#232b1b');
+  ctx.fillStyle = gg;
+  ctx.fillRect(0, horizonY, W, H - horizonY);
+
+  /* ---------- 道砟（跟随弯道） ---------- */
+  const FAR = 520;
+  const ballastPts = [];
+  const BN = 26;
+  for(let i = 0; i <= BN; i++) ballastPts.push(FAR * (i / BN));
+
+  ctx.fillStyle = '#6c6862';
+  ctx.beginPath();
+  ctx.moveTo(pxc(0, -3.2), py(0));
+  for(const d of ballastPts) ctx.lineTo(pxc(d, -3.2), py(d));
+  for(let i = ballastPts.length - 1; i >= 0; i--){
+    const d = ballastPts[i];
+    ctx.lineTo(pxc(d, 3.2), py(d));
+  }
+  ctx.lineTo(pxc(0, 3.2), py(0));
+  ctx.closePath();
+  ctx.fill();
+
+  /* ---------- 采集钢轨采样深度 ---------- */
+  const SP = 2.5;
+  const depths = [];
+  let n = Math.ceil((S.pos + 0.6) / SP);
+  for(;; n++){
+    const d = n * SP - S.pos;
+    if(d > FAR) break;
+    depths.push(d);
+  }
+  depths.reverse();   // 由远及近
+
+  /* ---------- 钢轨（跟随弯道） ---------- */
+  ctx.lineCap = 'round';
+  for(const side of [-1, 1]){
+    ctx.beginPath();
+    let started = false;
+    for(let i = depths.length - 1; i >= 0; i--){
+      const d = depths[i];
+      const x = pxc(d, side * 0.7175);
+      const y = py(d);
+      if(!started){ ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
+    /* 延伸到镜头脚下 */
+    ctx.lineTo(pxc(0, side * 0.7175), py(0));
+
+    ctx.strokeStyle = '#cfd6de';
+    ctx.lineWidth = Math.max(1.2, W * 0.0022);
+    ctx.stroke();
+  }
+
+  /* ---------- 接触网支柱 ---------- */
+  const POLE = 40;
+  const poles = [];
+  let pn = Math.ceil((S.pos + 1) / POLE);
+  for(;; pn++){
+    const d = pn * POLE - S.pos;
+    if(d > 620) break;
+    poles.push(d);
+  }
+  poles.reverse();
+
+  ctx.lineCap = 'butt';
+  for(const d of poles){
+    const y   = py(d);
+    const p   = pf(d);
+    const hgt = 8.5 * (W * 0.05) * p;
+    const lw  = Math.max(1, 5 * p * (W / 1400));
+    ctx.strokeStyle = 'rgba(95,108,124,0.92)';
+    ctx.lineWidth = lw;
+
+    for(const s of [-1, 1]){
+      const x = pxc(d, s * 4.0);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, y - hgt);
+      ctx.stroke();
+    }
+    /* 顶部横梁 */
+    const x1 = pxc(d, -4.0), x2 = pxc(d, 4.0);
+    ctx.beginPath();
+    ctx.moveTo(x1, y - hgt);
+    ctx.lineTo(x2, y - hgt);
+    ctx.stroke();
+  }
+
+  /* ---------- 接触线（跟随弯道中心） ---------- */
+  ctx.beginPath();
+  let first = true;
+  for(let i = poles.length - 1; i >= 0; i--){
+    const d = poles[i];
+    const x = pxc(d, 0);
+    const y = py(d) - 8.5 * (W * 0.05) * pf(d) + 6;
+    if(first){ ctx.moveTo(x, y); first = false; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = 'rgba(80,92,108,0.75)';
+  ctx.lineWidth = Math.max(1, W * 0.0012);
+  ctx.stroke();
+
+  /* ---------- ATP 紧急制动红光晕 ---------- */
+  if(S.atpBrake){
+    const flash = 0.18 + 0.14 * Math.sin(S.time * 14);
+    const vg = ctx.createRadialGradient(
+      W/2, H/2, Math.min(W, H) * 0.25,
+      W/2, H/2, Math.max(W, H) * 0.75
+    );
+    vg.addColorStop(0, 'rgba(255,40,30,0)');
+    vg.addColorStop(1, `rgba(255,40,30,${flash})`);
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  /* ---------- 高速速度线 ---------- */
+  const kmh = S.v * 3.6;
+  if(kmh > 200){
+    const cnt   = Math.min(80, Math.floor((kmh - 200) / 8));
+    const alpha = Math.min(0.36, (kmh - 200) / 600);
+    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+    ctx.lineWidth = 1.4;
+    for(let i = 0; i < cnt; i++){
+      const seed = (i * 9301 + 49297) % 233280 / 233280;
+      const side = (i % 2) ? 1 : -1;
+      const bx = W/2 + side * (W * 0.30 + seed * W * 0.20);
+      const by = (seed * H * 0.9 + S.time * 900 * (0.5 + seed)) % H;
+      const len = 40 + seed * 140;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx + side * 12, by + len);
+      ctx.stroke();
+    }
+  }
+}
+
+/* =======================================================
+   HUD
+   ======================================================= */
+const spdEl   = document.getElementById('speedVal');
+const notchEl = document.getElementById('notchVal');
+const markEl  = document.getElementById('notchMark');
+const warnEl  = document.getElementById('warn');
+
+function updateHUD(){
+  const kmh = S.v * 3.6;
+  spdEl.textContent = Math.round(kmh);
+
+  /* 司控器 */
+  const nt = S.notch;
+  let cls, txt;
+  if(nt > 1){ cls = 'pull';  txt = '牵引 ' + Math.round(nt); }
+  else if(nt < -1){ cls = 'brake'; txt = '制动 ' + Math.round(-nt); }
+  else { cls = 'coast'; txt = '惰行'; }
+  notchEl.className = cls;
+  notchEl.textContent = txt;
+
+  /* 档位条：-80 → 0%，+100 → 100% */
+  const pct = (nt - NOTCH_MIN) / (NOTCH_MAX - NOTCH_MIN) * 100;
+  markEl.style.left = pct + '%';
+  markEl.style.background = cls === 'brake' ? '#ff7a6b'
+                          : cls === 'pull'  ? '#7ee2a8' : '#dfe9f2';
+
+  /* 超速报警 */
+  if(S.warn && S.atpOn){
+    warnEl.style.opacity = 0.55 + 0.45 * Math.sin(S.time * 16);
+  }else{
+    warnEl.style.opacity = 0;
+  }
+}
+
+/* =======================================================
+   主循环
+   ======================================================= */
+let lastT = 0;
+function frame(t){
+  if(!lastT) lastT = t;
+  let dt = (t - lastT) / 1000;
+  lastT = t;
+  if(dt > 0.05) dt = 0.05;
+
+  update(dt);
+  render();
+  updateHUD();
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* 触屏设备替换提示文案 */
+if(isTouch){
+  document.getElementById('hint').innerHTML =
+    '按住 <b>牵引</b> 加速 · 按住 <b>制动</b> 减速 · 点击 <b>解除 ATP</b> 释放全部动力';
+}
+</script>
+</body>
+</html>
