@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>CRH 高速动车组 · 模拟驾驶</title>
+<title>CRH 3D 火箭动车组 · WebGL 真实世界</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box;}
   html,body{
@@ -12,8 +12,7 @@
     font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
     user-select:none;-webkit-user-select:none;
     -webkit-tap-highlight-color:transparent;
-    overscroll-behavior:none;
-    touch-action:none;
+    overscroll-behavior:none;touch-action:none;
   }
   #cv{display:block;width:100%;height:100%;touch-action:none;}
   #ui{position:fixed;inset:0;pointer-events:none;}
@@ -30,7 +29,7 @@
     box-shadow:0 6px 24px rgba(0,0,0,.45);
   }
 
-  /* ---------- 速度表 ---------- */
+  /* 速度表 */
   #speedPanel{right:16px;top:16px;text-align:right;min-width:190px;}
   #speedVal{font-size:clamp(44px,9vw,68px);font-weight:700;line-height:.95;
     font-variant-numeric:tabular-nums;letter-spacing:-2px;
@@ -42,7 +41,7 @@
   #limitRow b{color:#7ee2a8;font-size:14px;}
   #limitRow b.off{color:#ff8a5c;}
 
-  /* ---------- 左侧信息 + ATP ---------- */
+  /* 左侧信息 + ATP */
   #leftPanel{left:16px;top:16px;min-width:230px;}
   .row{display:flex;justify-content:space-between;align-items:center;
     font-size:13px;margin-bottom:7px;gap:10px;}
@@ -72,20 +71,17 @@
     color:#ffb0a0;
     padding:9px 16px;border-radius:10px;
     font-size:13px;font-weight:700;font-family:inherit;
-    transition:all .15s;
-    touch-action:manipulation;
+    transition:all .15s;touch-action:manipulation;
     -webkit-tap-highlight-color:transparent;
   }
   #atpBtn.on{background:rgba(80,220,150,.16);border-color:rgba(80,220,150,.55);color:#9df3c4;}
 
-  /* ---------- 顶部提示 ---------- */
+  /* 提示 */
   #hint{position:absolute;top:18px;left:50%;transform:translateX(-50%);
     font-size:12px;color:rgba(200,225,255,.6);letter-spacing:.5px;
     text-align:center;line-height:1.6;max-width:46vw;}
-  #hint kbd{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);
-    border-radius:4px;padding:1px 6px;font-family:inherit;font-size:11px;color:#cfe4ff;}
 
-  /* ---------- 底部触控按钮 ---------- */
+  /* 触控按钮 */
   #touch{
     position:fixed;left:0;right:0;bottom:0;
     display:flex;gap:12px;
@@ -93,21 +89,16 @@
     pointer-events:none;z-index:20;
   }
   .tbtn{
-    pointer-events:auto;
-    flex:1;min-height:80px;
+    pointer-events:auto;flex:1;min-height:80px;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:2px;
-    border-radius:18px;
+    gap:2px;border-radius:18px;
     border:1px solid rgba(140,190,255,.32);
-    background:rgba(18,28,46,.8);
-    color:#cfe4ff;
+    background:rgba(18,28,46,.8);color:#cfe4ff;
     font-size:17px;font-weight:700;font-family:inherit;
-    letter-spacing:3px;
-    backdrop-filter:blur(8px);
+    letter-spacing:3px;backdrop-filter:blur(8px);
     -webkit-backdrop-filter:blur(8px);
     box-shadow:0 6px 20px rgba(0,0,0,.45);
-    touch-action:none;
-    -webkit-tap-highlight-color:transparent;
+    touch-action:none;-webkit-tap-highlight-color:transparent;
     user-select:none;-webkit-user-select:none;
     transition:transform .07s,background .07s,border-color .07s;
   }
@@ -117,18 +108,17 @@
   #btnBrake.act{background:rgba(195,65,50,.5);border-color:rgba(255,125,105,.8);color:#fff0ec;}
   #btnCoast.act{background:rgba(90,120,160,.5);border-color:rgba(170,200,240,.7);}
 
-  /* ---------- 超速报警 ---------- */
+  /* 超速报警 */
   #warn{position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);
     font-size:clamp(26px,7vw,46px);font-weight:800;color:#ff5b4a;letter-spacing:8px;
     text-shadow:0 0 30px rgba(255,60,40,.9);opacity:0;pointer-events:none;white-space:nowrap;}
 </style>
 </head>
 <body>
-<canvas id="cv"></canvas>
+<div id="cv"></div>
 
 <div id="ui">
   <div id="hint">按住下方按钮牵引 / 制动 · 点击 ATP 按钮解除防护</div>
-
   <div id="warn">超 速 报 警</div>
 
   <div class="panel" id="leftPanel">
@@ -156,102 +146,189 @@
   <button class="tbtn" id="btnPull">牵 引<small>按住</small></button>
 </div>
 
+<!-- 引入 Three.js 3D 引擎 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
 <script>
 /* =======================================================
-   常量  —— 火箭级动力，平缓弯道
+   常量  —— 火箭级动力，真 3D 世界
    ======================================================= */
-const MASS         = 500000;   // kg  8节编组约500t
-const MAX_TRACTION = 1.0e6;    // N   低速最大牵引力
-const POWER        = 50e6;     // W   牵引功率 50MW
-const BRAKE_DECEL  = 1.60;     // m/s² 最大常用制动
-const EMERG_DECEL  = 2.00;     // m/s² ATP紧急制动
-const A_RES = 2600, B_RES = 45, C_RES = 8.2;   // 阻力系数
+const MASS         = 500000;
+const MAX_TRACTION = 1.0e6;
+const POWER        = 50e6;
+const BRAKE_DECEL  = 1.60;
+const EMERG_DECEL  = 2.00;
+const A_RES = 2600, B_RES = 45, C_RES = 8.2;
 const ATP_LIMIT_KMH = 300;
 
-const NOTCH_MAX  =  100;   // 牵引上限 100
-const NOTCH_MIN  =  -80;   // 制动下限 -80
-const NOTCH_RATE =   90;   // 档/秒
-
-const isTouch = ('ontouchstart' in window) ||
-                (navigator.maxTouchPoints > 0) ||
-                window.matchMedia('(pointer: coarse)').matches;
+const NOTCH_MAX  =  100;
+const NOTCH_MIN  =  -80;
+const NOTCH_RATE =   90;
 
 /* =======================================================
-   画布
+   Three.js 核心初始化
    ======================================================= */
-const cv  = document.getElementById('cv');
-const ctx = cv.getContext('2d');
-let W, H, horizonY;
+const container = document.getElementById('cv');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB); // 天空蓝
+scene.fog = new THREE.FogExp2(0x87CEEB, 0.0008); // 雾效，增加深度感
 
-function resize(){
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth;
-  H = window.innerHeight;
-  cv.width  = Math.round(W * dpr);
-  cv.height = Math.round(H * dpr);
-  cv.style.width  = W + 'px';
-  cv.style.height = H + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  horizonY = H * 0.42;
-}
-window.addEventListener('resize', resize);
-window.addEventListener('orientationchange', () => setTimeout(resize, 120));
-resize();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+container.appendChild(renderer.domElement);
 
-/* 透视投影 */
-const K  = 12;
-const pf = d => K / (d + K);                        // 0~1
-const py = d => horizonY + (H - horizonY) * pf(d);  // 距离 → 屏幕y
+// 光照
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(100, 200, 50);
+scene.add(dirLight);
 
 /* =======================================================
-   平缓随机弯道：按里程生成横向偏移（大幅降低频率与幅度）
+   生成 3D 轨道
    ======================================================= */
-const SEG       = 3000;   // 每段长度 m（从180大幅提升到3000）
-const CURVE_AMP = 12;     // 最大横向摆幅 m（从42大幅降低到12）
+const trackLength = 20000; // 轨道总长
+const trackPoints = [];
+const numPoints = 200;
 
-function hash1(n){
-  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
-  return x - Math.floor(x);
+for (let i = 0; i < numPoints; i++) {
+    const t = i / (numPoints - 1);
+    const z = -t * trackLength; // 向 -Z 延伸
+    // 随机生成横向 X 偏移（弯道）
+    const x = Math.sin(t * Math.PI * 8) * 150 + Math.sin(t * Math.PI * 23) * 30;
+    // 随机生成纵向 Y 偏移（上下坡）
+    const y = Math.sin(t * Math.PI * 6) * 40 + Math.cos(t * Math.PI * 15) * 10;
+    trackPoints.push(new THREE.Vector3(x, y, z));
 }
 
-function curveOffset(s){
-  const i  = Math.floor(s / SEG);
-  const t  = s / SEG - i;
-  const t2 = t * t * (3 - 2 * t);          // smoothstep 平滑
-  const a  = (hash1(i)     - 0.5) * 2 * CURVE_AMP;
-  const b  = (hash1(i + 1) - 0.5) * 2 * CURVE_AMP;
-  return a + (b - a) * t2;
+// 创建平滑 3D 曲线
+const curve = new THREE.CatmullRomCurve3(trackPoints);
+
+// 绘制道砟（用粗圆柱体模拟路基）
+const ballastGeo = new THREE.TubeGeometry(curve, 800, 4.5, 8, false);
+const ballastMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 1 });
+const ballast = new THREE.Mesh(ballastGeo, ballastMat);
+scene.add(ballast);
+
+// 绘制钢轨（两根细管，沿曲线偏移）
+// Three.js 原生没有直接偏移曲线的功能，我们通过数学手动计算平行曲线
+const railOffset = 2.0;
+const railPointsL = [];
+const railPointsR = [];
+
+for (let i = 0; i <= 800; i++) {
+    const t = i / 800;
+    const point = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t);
+    // 计算法线（指向右侧）
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    
+    railPointsL.push(point.clone().add(right.clone().multiplyScalar(-railOffset)));
+    railPointsR.push(point.clone().add(right.clone().multiplyScalar(railOffset)));
 }
 
-let camCurve = 0;   // 列车当前所在处的轨道偏移
+const railCurveL = new THREE.CatmullRomCurve3(railPointsL);
+const railCurveR = new THREE.CatmullRomCurve3(railPointsR);
 
-/* 核心修复：限制相对弯曲量，防止透视放大导致钢轨飞出屏幕变成白线 */
-function pxc(d, xm){
-  const relCurve = curveOffset(S.pos + d) - camCurve;
-  // 相对偏移量限幅，防止极端弯道下坐标溢出
-  const safeCurve = Math.max(-10, Math.min(10, relCurve));
-  return W/2 + (safeCurve * 0.04 + xm) * W * 0.30 * pf(d);
-}
+const railGeo = new THREE.TubeGeometry(railCurveL, 800, 0.15, 4, false);
+const railMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.8, roughness: 0.2 });
+scene.add(new THREE.Mesh(railGeo, railMat));
+scene.add(new THREE.Mesh(new THREE.TubeGeometry(railCurveR, 800, 0.15, 4, false), railMat));
 
 /* =======================================================
-   状态
+   接触网支柱
+   ======================================================= */
+const poleMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
+const wireMat = new THREE.LineBasicMaterial({ color: 0x333333 });
+
+const wirePoints = [];
+
+for (let i = 0; i < 80; i++) {
+    const t = i / 79;
+    const p = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t);
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(tangent, up).normalize();
+
+    // 支柱
+    const poleGeo = new THREE.CylinderGeometry(0.2, 0.3, 12, 6);
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.copy(p).add(right.clone().multiplyScalar(7));
+    pole.position.y += 6;
+    scene.add(pole);
+
+    // 横梁
+    const beamGeo = new THREE.BoxGeometry(14, 0.4, 0.4);
+    const beam = new THREE.Mesh(beamGeo, poleMat);
+    beam.position.copy(p).add(right.clone().multiplyScalar(0));
+    beam.position.y += 12;
+    beam.quaternion.setFromUnitVectors(new THREE.Vector3(1,0,0), right);
+    scene.add(beam);
+
+    // 接触线悬挂点
+    wirePoints.push(p.clone().add(new THREE.Vector3(0, 11, 0)));
+}
+
+// 接触线
+const wireGeo = new THREE.BufferGeometry().setFromPoints(wirePoints);
+const wireLine = new THREE.Line(wireGeo, wireMat);
+scene.add(wireLine);
+
+/* =======================================================
+   火车模型（简单的 3D 几何体组合）
+   ======================================================= */
+const trainGroup = new THREE.Group();
+
+// 车体
+const bodyGeo = new THREE.CylinderGeometry(2.2, 2.2, 28, 16);
+const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf0f0f0, metalness: 0.6, roughness: 0.3 });
+const body = new THREE.Mesh(bodyGeo, bodyMat);
+body.rotation.x = Math.PI / 2;
+body.position.z = 14;
+trainGroup.add(body);
+
+// 车头（圆锥）
+const noseGeo = new THREE.ConeGeometry(2.2, 6, 16);
+const noseMat = new THREE.MeshStandardMaterial({ color: 0xff2222, metalness: 0.8, roughness: 0.2 });
+const nose = new THREE.Mesh(noseGeo, noseMat);
+nose.rotation.x = -Math.PI / 2;
+nose.position.z = 0;
+trainGroup.add(nose);
+
+// 车窗（简单的黑色盒子）
+const windowGeo = new THREE.BoxGeometry(4.4, 1.2, 0.2);
+const windowMat = new THREE.MeshStandardMaterial({ color: 0x111122, metalness: 0.9, roughness: 0.1 });
+for (let i = 0; i < 5; i++) {
+    const win = new THREE.Mesh(windowGeo, windowMat);
+    win.position.set(0, 0.8, 6 + i * 5);
+    trainGroup.add(win);
+}
+
+scene.add(trainGroup);
+
+/* =======================================================
+   游戏状态
    ======================================================= */
 const S = {
-  v: 0,          // m/s
-  pos: 0,        // m
-  notch: 0,      // -80 ~ +100
+  v: 0,
+  pos: 0,
+  notch: 0,
   atpOn: true,
   atpBrake: false,
   warn: false,
-  time: 0
+  time: 0,
+  t: 0 // 曲线参数 0~1
 };
 
-/* 输入 */
 const kb = { pull:false, brake:false };
 const tc = { pull:false, brake:false };
 
 /* =======================================================
-   键盘
+   键盘与触屏事件
    ======================================================= */
 window.addEventListener('keydown', e => {
   if(['ArrowUp','ArrowDown','Space'].includes(e.code)) e.preventDefault();
@@ -270,25 +347,17 @@ window.addEventListener('keyup', e => {
   }
 });
 
-/* =======================================================
-   ATP 开关
-   ======================================================= */
 function toggleATP(){
   S.atpOn = !S.atpOn;
   if(!S.atpOn) S.atpBrake = false;
-
   const btn = document.getElementById('atpBtn');
   const st  = document.getElementById('atpState');
   if(S.atpOn){
-    btn.textContent = '解除 ATP';
-    btn.classList.remove('on');
-    st.textContent = 'ATP 防护：启用';
-    st.classList.remove('off');
+    btn.textContent = '解除 ATP'; btn.classList.remove('on');
+    st.textContent = 'ATP 防护：启用'; st.classList.remove('off');
   }else{
-    btn.textContent = '恢复 ATP';
-    btn.classList.add('on');
-    st.textContent = 'ATP 防护：已解除';
-    st.classList.add('off');
+    btn.textContent = '恢复 ATP'; btn.classList.add('on');
+    st.textContent = 'ATP 防护：已解除'; st.classList.add('off');
   }
   document.getElementById('speedVal').classList.toggle('free', !S.atpOn);
   const lim = document.getElementById('limitVal');
@@ -296,33 +365,12 @@ function toggleATP(){
   lim.textContent = S.atpOn ? '300' : '∞';
 }
 
-const atpBtnEl = document.getElementById('atpBtn');
-atpBtnEl.addEventListener('click', e => {
-  e.preventDefault();
-  toggleATP();
-  atpBtnEl.blur();
-});
+document.getElementById('atpBtn').addEventListener('click', e => { e.preventDefault(); toggleATP(); e.currentTarget.blur(); });
 
-/* =======================================================
-   触屏按钮
-   ======================================================= */
 function bindHold(el, onDown, onUp){
   let active = false;
-
-  const down = e => {
-    e.preventDefault();
-    active = true;
-    el.classList.add('act');
-    try{ el.setPointerCapture(e.pointerId); }catch(_){}
-    onDown();
-  };
-  const up = () => {
-    if(!active) return;
-    active = false;
-    el.classList.remove('act');
-    onUp();
-  };
-
+  const down = e => { e.preventDefault(); active = true; el.classList.add('act'); try{ el.setPointerCapture(e.pointerId); }catch(_){} onDown(); };
+  const up = () => { if(!active) return; active = false; el.classList.remove('act'); onUp(); };
   el.addEventListener('pointerdown', down, {passive:false});
   el.addEventListener('pointerup', up);
   el.addEventListener('pointercancel', up);
@@ -330,34 +378,23 @@ function bindHold(el, onDown, onUp){
   el.addEventListener('contextmenu', e => e.preventDefault());
 }
 
-const btnPull  = document.getElementById('btnPull');
-const btnBrake = document.getElementById('btnBrake');
+bindHold(document.getElementById('btnPull'),  () => tc.pull  = true, () => tc.pull  = false);
+bindHold(document.getElementById('btnBrake'), () => tc.brake = true, () => tc.brake = false);
+
 const btnCoast = document.getElementById('btnCoast');
-
-bindHold(btnPull,  () => tc.pull  = true, () => tc.pull  = false);
-bindHold(btnBrake, () => tc.brake = true, () => tc.brake = false);
-
-btnCoast.addEventListener('pointerdown', e => {
-  e.preventDefault();
-  btnCoast.classList.add('act');
-  S.notch = 0;
-});
-['pointerup','pointercancel','pointerleave'].forEach(ev =>
-  btnCoast.addEventListener(ev, () => btnCoast.classList.remove('act'))
-);
+btnCoast.addEventListener('pointerdown', e => { e.preventDefault(); btnCoast.classList.add('act'); S.notch = 0; });
+['pointerup','pointercancel','pointerleave'].forEach(ev => btnCoast.addEventListener(ev, () => btnCoast.classList.remove('act')));
 btnCoast.addEventListener('contextmenu', e => e.preventDefault());
 
-/* 防止双指缩放 / 双击缩放 */
 document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('dblclick', e => e.preventDefault(), {passive:false});
 
 /* =======================================================
-   物理更新
+   物理更新与 3D 动画
    ======================================================= */
 function update(dt){
   S.time += dt;
 
-  /* ---- 司控器 ---- */
   const pull  = kb.pull  || tc.pull;
   const brake = kb.brake || tc.brake;
 
@@ -365,210 +402,64 @@ function update(dt){
   if(brake) S.notch = Math.max(NOTCH_MIN, S.notch - NOTCH_RATE * dt);
 
   const v = S.v;
-
-  /* ---- 牵引 / 制动力 ---- */
   let F = 0;
   if(S.notch > 0.5){
-    const fmax = Math.min(MAX_TRACTION, POWER / Math.max(v, 5));  // 恒功率区
+    const fmax = Math.min(MAX_TRACTION, POWER / Math.max(v, 5));
     F = fmax * (S.notch / NOTCH_MAX);
   }else if(S.notch < -0.5){
     F = -MASS * BRAKE_DECEL * (Math.min(-S.notch, -NOTCH_MIN) / -NOTCH_MIN);
   }
-
-  /* ATP 紧急制动优先 */
   if(S.atpBrake) F = Math.min(F, -MASS * EMERG_DECEL);
 
-  /* ---- 阻力 ---- */
   const drag = A_RES + B_RES * v + C_RES * v * v;
   const a = (F - (v > 0.05 ? drag : 0)) / MASS;
 
   S.v = Math.max(0, v + a * dt);
   S.pos += S.v * dt;
 
-  /* ---- ATP 逻辑 ---- */
   if(S.atpOn){
     const limit = ATP_LIMIT_KMH / 3.6;
-    if(!S.atpBrake){
-      if(S.v > limit + 0.9) S.atpBrake = true;
-    }else{
-      if(S.v < limit - 0.9) S.atpBrake = false;
-    }
+    if(!S.atpBrake){ if(S.v > limit + 0.9) S.atpBrake = true; }
+    else{ if(S.v < limit - 0.9) S.atpBrake = false; }
     S.warn = S.v > limit;
-  }else{
-    S.atpBrake = false;
-    S.warn = false;
-  }
+  }else{ S.atpBrake = false; S.warn = false; }
+
+  // 更新曲线进度 t
+  S.t += (S.v * dt) / trackLength;
+  if (S.t > 1) S.t -= 1; // 循环
+
+  /* --- 3D 模型位置与旋转更新 --- */
+  const trainPos = curve.getPointAt(S.t);
+  const trainTangent = curve.getTangentAt(S.t);
+  
+  // 列车的 Z 轴朝向切线方向
+  trainGroup.position.copy(trainPos);
+  const lookAtPoint = trainPos.clone().add(trainTangent);
+  trainGroup.lookAt(lookAtPoint);
+  
+  // 因为车体本身建模是沿着 Z 轴的，所以 lookAt 刚好对齐
+  // 但我们的车头是 -Z 方向，所以加个 180 度旋转
+  trainGroup.rotateY(Math.PI);
+
+  /* --- 相机跟随（第三人称） --- */
+  // 相机放在列车后上方
+  const camOffset = new THREE.Vector3(0, 8, 20);
+  camOffset.applyQuaternion(trainGroup.quaternion);
+  const idealCamPos = trainPos.clone().add(camOffset);
+  
+  // 平滑跟随
+  camera.position.lerp(idealCamPos, 0.1);
+  camera.lookAt(trainPos.clone().add(trainTangent.clone().multiplyScalar(15))); // 看向前方
+
+  // 速度感：动态 FOV
+  const baseFov = 75;
+  const targetFov = baseFov + (S.v * 3.6) * 0.04; // 速度越快，视野越广
+  camera.fov += (Math.min(targetFov, 130) - camera.fov) * 0.1;
+  camera.updateProjectionMatrix();
 }
 
 /* =======================================================
-   渲染
-   ======================================================= */
-function render(){
-  /* 相机所在处的弯道偏移 */
-  camCurve = curveOffset(S.pos);
-
-  /* ---------- 天空 ---------- */
-  const sg = ctx.createLinearGradient(0, 0, 0, horizonY);
-  sg.addColorStop(0,    '#3a6ba6');
-  sg.addColorStop(0.55, '#7fb0d8');
-  sg.addColorStop(1,    '#c8dff0');
-  ctx.fillStyle = sg;
-  ctx.fillRect(0, 0, W, horizonY + 1);
-
-  /* 远山 */
-  ctx.fillStyle = 'rgba(88,112,138,0.55)';
-  ctx.beginPath();
-  ctx.moveTo(0, horizonY);
-  for(let x = 0; x <= W; x += 24){
-    const h = Math.sin(x * 0.0075) * 22 + Math.sin(x * 0.019 + 1.3) * 11 + 18;
-    ctx.lineTo(x, horizonY - h);
-  }
-  ctx.lineTo(W, horizonY);
-  ctx.closePath();
-  ctx.fill();
-
-  /* ---------- 地面 ---------- */
-  const gg = ctx.createLinearGradient(0, horizonY, 0, H);
-  gg.addColorStop(0,    '#6f7d55');
-  gg.addColorStop(0.35, '#4b5738');
-  gg.addColorStop(1,    '#232b1b');
-  ctx.fillStyle = gg;
-  ctx.fillRect(0, horizonY, W, H - horizonY);
-
-  /* ---------- 道砟（跟随弯道） ---------- */
-  const FAR = 520;
-  const ballastPts = [];
-  const BN = 26;
-  for(let i = 0; i <= BN; i++) ballastPts.push(FAR * (i / BN));
-
-  ctx.fillStyle = '#6c6862';
-  ctx.beginPath();
-  ctx.moveTo(pxc(0, -3.2), py(0));
-  for(const d of ballastPts) ctx.lineTo(pxc(d, -3.2), py(d));
-  for(let i = ballastPts.length - 1; i >= 0; i--){
-    const d = ballastPts[i];
-    ctx.lineTo(pxc(d, 3.2), py(d));
-  }
-  ctx.lineTo(pxc(0, 3.2), py(0));
-  ctx.closePath();
-  ctx.fill();
-
-  /* ---------- 采集钢轨采样深度（增大间距，提升性能） ---------- */
-  const SP = 3.0;
-  const depths = [];
-  let n = Math.ceil((S.pos + 0.6) / SP);
-  for(;; n++){
-    const d = n * SP - S.pos;
-    if(d > FAR) break;
-    depths.push(d);
-  }
-  depths.reverse();   // 由远及近
-
-  /* ---------- 钢轨（跟随弯道） ---------- */
-  ctx.lineCap = 'round';
-  for(const side of [-1, 1]){
-    ctx.beginPath();
-    let started = false;
-    for(let i = depths.length - 1; i >= 0; i--){
-      const d = depths[i];
-      const x = pxc(d, side * 0.7175);
-      const y = py(d);
-      if(!started){ ctx.moveTo(x, y); started = true; }
-      else ctx.lineTo(x, y);
-    }
-    /* 延伸到镜头脚下 */
-    ctx.lineTo(pxc(0, side * 0.7175), py(0));
-
-    ctx.strokeStyle = '#cfd6de';
-    ctx.lineWidth = Math.max(1.2, W * 0.0022);
-    ctx.stroke();
-  }
-
-  /* ---------- 接触网支柱 ---------- */
-  const POLE = 40;
-  const poles = [];
-  let pn = Math.ceil((S.pos + 1) / POLE);
-  for(;; pn++){
-    const d = pn * POLE - S.pos;
-    if(d > 620) break;
-    poles.push(d);
-  }
-  poles.reverse();
-
-  ctx.lineCap = 'butt';
-  for(const d of poles){
-    const y   = py(d);
-    const p   = pf(d);
-    const hgt = 8.5 * (W * 0.05) * p;
-    const lw  = Math.max(1, 5 * p * (W / 1400));
-    ctx.strokeStyle = 'rgba(95,108,124,0.92)';
-    ctx.lineWidth = lw;
-
-    for(const s of [-1, 1]){
-      const x = pxc(d, s * 4.0);
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x, y - hgt);
-      ctx.stroke();
-    }
-    /* 顶部横梁 */
-    const x1 = pxc(d, -4.0), x2 = pxc(d, 4.0);
-    ctx.beginPath();
-    ctx.moveTo(x1, y - hgt);
-    ctx.lineTo(x2, y - hgt);
-    ctx.stroke();
-  }
-
-  /* ---------- 接触线（跟随弯道中心） ---------- */
-  ctx.beginPath();
-  let first = true;
-  for(let i = poles.length - 1; i >= 0; i--){
-    const d = poles[i];
-    const x = pxc(d, 0);
-    const y = py(d) - 8.5 * (W * 0.05) * pf(d) + 6;
-    if(first){ ctx.moveTo(x, y); first = false; }
-    else ctx.lineTo(x, y);
-  }
-  ctx.strokeStyle = 'rgba(80,92,108,0.75)';
-  ctx.lineWidth = Math.max(1, W * 0.0012);
-  ctx.stroke();
-
-  /* ---------- ATP 紧急制动红光晕 ---------- */
-  if(S.atpBrake){
-    const flash = 0.18 + 0.14 * Math.sin(S.time * 14);
-    const vg = ctx.createRadialGradient(
-      W/2, H/2, Math.min(W, H) * 0.25,
-      W/2, H/2, Math.max(W, H) * 0.75
-    );
-    vg.addColorStop(0, 'rgba(255,40,30,0)');
-    vg.addColorStop(1, `rgba(255,40,30,${flash})`);
-    ctx.fillStyle = vg;
-    ctx.fillRect(0, 0, W, H);
-  }
-
-  /* ---------- 高速速度线 ---------- */
-  const kmh = S.v * 3.6;
-  if(kmh > 200){
-    const cnt   = Math.min(80, Math.floor((kmh - 200) / 8));
-    const alpha = Math.min(0.36, (kmh - 200) / 600);
-    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
-    ctx.lineWidth = 1.4;
-    for(let i = 0; i < cnt; i++){
-      const seed = (i * 9301 + 49297) % 233280 / 233280;
-      const side = (i % 2) ? 1 : -1;
-      const bx = W/2 + side * (W * 0.30 + seed * W * 0.20);
-      const by = (seed * H * 0.9 + S.time * 900 * (0.5 + seed)) % H;
-      const len = 40 + seed * 140;
-      ctx.beginPath();
-      ctx.moveTo(bx, by);
-      ctx.lineTo(bx + side * 12, by + len);
-      ctx.stroke();
-    }
-  }
-}
-
-/* =======================================================
-   HUD
+   HUD 更新
    ======================================================= */
 const spdEl   = document.getElementById('speedVal');
 const notchEl = document.getElementById('notchVal');
@@ -579,7 +470,6 @@ function updateHUD(){
   const kmh = S.v * 3.6;
   spdEl.textContent = Math.round(kmh);
 
-  /* 司控器 */
   const nt = S.notch;
   let cls, txt;
   if(nt > 1){ cls = 'pull';  txt = '牵引 ' + Math.round(nt); }
@@ -588,18 +478,12 @@ function updateHUD(){
   notchEl.className = cls;
   notchEl.textContent = txt;
 
-  /* 档位条：-80 → 0%，+100 → 100% */
   const pct = (nt - NOTCH_MIN) / (NOTCH_MAX - NOTCH_MIN) * 100;
   markEl.style.left = pct + '%';
-  markEl.style.background = cls === 'brake' ? '#ff7a6b'
-                          : cls === 'pull'  ? '#7ee2a8' : '#dfe9f2';
+  markEl.style.background = cls === 'brake' ? '#ff7a6b' : cls === 'pull' ? '#7ee2a8' : '#dfe9f2';
 
-  /* 超速报警 */
-  if(S.warn && S.atpOn){
-    warnEl.style.opacity = 0.55 + 0.45 * Math.sin(S.time * 16);
-  }else{
-    warnEl.style.opacity = 0;
-  }
+  if(S.warn && S.atpOn){ warnEl.style.opacity = 0.55 + 0.45 * Math.sin(S.time * 16); }
+  else{ warnEl.style.opacity = 0; }
 }
 
 /* =======================================================
@@ -613,18 +497,19 @@ function frame(t){
   if(dt > 0.05) dt = 0.05;
 
   update(dt);
-  render();
+  renderer.render(scene, camera);
   updateHUD();
 
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
-/* 触屏设备替换提示文案 */
-if(isTouch){
-  document.getElementById('hint').innerHTML =
-    '按住 <b>牵引</b> 加速 · 按住 <b>制动</b> 减速 · 点击 <b>解除 ATP</b> 释放全部动力';
-}
+/* 窗口大小调整 */
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
 </script>
 </body>
 </html>
