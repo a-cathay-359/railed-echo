@@ -158,7 +158,7 @@
 
 <script>
 /* =======================================================
-   常量  —— 火箭级动力
+   常量  —— 火箭级动力，平缓弯道
    ======================================================= */
 const MASS         = 500000;   // kg  8节编组约500t
 const MAX_TRACTION = 1.0e6;    // N   低速最大牵引力
@@ -204,10 +204,10 @@ const pf = d => K / (d + K);                        // 0~1
 const py = d => horizonY + (H - horizonY) * pf(d);  // 距离 → 屏幕y
 
 /* =======================================================
-   随机弯道：按里程生成横向偏移
+   平缓随机弯道：按里程生成横向偏移（大幅降低频率与幅度）
    ======================================================= */
-const SEG       = 180;    // 每段长度 m
-const CURVE_AMP = 42;     // 最大横向摆幅 m
+const SEG       = 3000;   // 每段长度 m（从180大幅提升到3000）
+const CURVE_AMP = 12;     // 最大横向摆幅 m（从42大幅降低到12）
 
 function hash1(n){
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
@@ -225,8 +225,12 @@ function curveOffset(s){
 
 let camCurve = 0;   // 列车当前所在处的轨道偏移
 
+/* 核心修复：限制相对弯曲量，防止透视放大导致钢轨飞出屏幕变成白线 */
 function pxc(d, xm){
-  return W/2 + (curveOffset(S.pos + d) - camCurve + xm) * W * 0.30 * pf(d);
+  const relCurve = curveOffset(S.pos + d) - camCurve;
+  // 相对偏移量限幅，防止极端弯道下坐标溢出
+  const safeCurve = Math.max(-10, Math.min(10, relCurve));
+  return W/2 + (safeCurve * 0.04 + xm) * W * 0.30 * pf(d);
 }
 
 /* =======================================================
@@ -449,8 +453,8 @@ function render(){
   ctx.closePath();
   ctx.fill();
 
-  /* ---------- 采集钢轨采样深度 ---------- */
-  const SP = 2.5;
+  /* ---------- 采集钢轨采样深度（增大间距，提升性能） ---------- */
+  const SP = 3.0;
   const depths = [];
   let n = Math.ceil((S.pos + 0.6) / SP);
   for(;; n++){
